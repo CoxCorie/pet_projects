@@ -7,94 +7,121 @@ Created on Tuesday June 6th, 2021
 
 
 OVERVIEW:
-This module addresses the use case of a police officer deciding which types of
-speeders (mph over the speed limit) to pull over with the objective of maximizing
-ticket revenue. It considers the different types of speeders along with the average
-amount of time a booking takes.
+This module addresses the use case of a police officer deciding which driver profiles
+(mph over the speed limit) to pull over with the objective of maximizing ticket revenue.
+It considers an overall traffic patter (collection of driver profiles) along with
+the average amount of time a booking takes.
 
-TODO:
-    - build in assumptions around mins_between_speeders fitting a poisson distrubtion.
-      this will allow us to make variance assumptions and construct simulations.
-    - refactor get_max_ticket_revenue_per_hour into an O(n) operation to improve
-      performance on large amounts of speeder_types. this can be done by replacing
-      get_ticket_revenue_per_hour() with a constant time fuction that adjusts
-      ticket_revenue_per_hour as number of speeder_types increment.
-      NOTE: this may not be needed if amount of speeder_types is expected to remain small.
+CLASSES:
+    DriverProfile: a driver profile defined by number of miles per hour over the speed limit
+    TrafficPattern: a collection of DriverProfile's'
 """
 
-from copy import deepcopy
+from scipy.stats import expon
+from random import random, choices
+import time
 
-class SpeederType:
-    """a type of speeder defined by mph_over_limit and mins_between_speeders"""
-    def __init__(self, mph_over_limit, mins_between_speeders):
+class DriverProfile:
+    """a driver profile defined by number of miles per hour over the speed limit"""
+    def __init__(self, mph_over_limit, mins_between_drivers):
         self.mph_over_limit = mph_over_limit
-        self.mins_between_speeders = mins_between_speeders
+        self.mins_between_drivers = mins_between_drivers
         self.dollars_fined = mph_over_limit * 10
-        self.speeders_per_hour = 60/mins_between_speeders
-
-class SpeederGroup:
-    """a collection of speeder types wih functionality for evalating ticketing revenue"""
+        self.expected_drivers_per_min = 1/mins_between_drivers
     
-    def __init__(self):
-        self.speeder_types = []
-
-    def add_speeder_type(self, *args, **kwargs):
-        self.speeder_types.append(SpeederType(*args, **kwargs))
+    # O(1) time
+    def get_random_mins(self):
+        """returns a simulated number of minutes before a driver of this profile is seen"""
+        return expon.ppf(random()) * self.mins_between_drivers
     
-    # O(n) time where n is len(speeder_types)
-    def add_speeder_types(self, speeder_types):
-            for args in speeder_types:
-                self.add_speeder_type(*args)
-
-    # O(n) time where n is len(self.speeder_types)
-    def get_total_speeders_per_hour(self):
-        """returns the expected number of speeders per hour across all speeder types"""
-        return sum([s.speeders_per_hour for s in self.speeder_types])
+    # (1) time
+    @staticmethod
+    def get_random_profile(profile_weights):
+        """returns a simulated ticket value from a collection of ticket weights"""
+        mph_over = list(profile_weights.keys())
+        weights = list(profile_weights.values())
+        random_mph_over = choices(population=mph_over, weights=weights)[0]
+        profile = DriverProfile(random_mph_over, 1)
+        return profile
     
-    # O(n) time where n is len(self.speeder_types)
-    def get_expected_ticket_value(self):
-        """returns the expected ticket value of a randomly chosen speeder"""
-        if len(self.speeder_types) == 0:
-            return 0
-        speeders_per_hour = self.get_total_speeders_per_hour()
-        return sum([s.dollars_fined * s.speeders_per_hour/speeders_per_hour for s in self.speeder_types])    
+    # O(1) time
+    def get_expected_revenue_per_hour(self, booking_time_mins=15):
+        """returns the expected ticket revenue per hour subject to a booking time"""
+        stops_per_hour = 60 * 1 / (self.mins_between_drivers + booking_time_mins)
+        return round(stops_per_hour * self.dollars_fined, 2)
 
-    # O(n) time where n is len(self.speeder_types)
-    def get_ticket_revenue_per_hour(self, booking_time_mins=15):
-        """returns the expected ticket revenue per hour assuming all speeder types are stopped"""
-        if len(self.speeder_types) == 0:
-            return 0
-        expected_mins_to_find_speeder = 1 / (self.get_total_speeders_per_hour() / 60)
-        expected_stops_per_hour = 60 / (expected_mins_to_find_speeder + booking_time_mins) 
-        expected_ticket_value = self.get_expected_ticket_value()
-        return round(expected_stops_per_hour * expected_ticket_value, 2)
+    # O(1) time
+    def __add__(self, other):
+        new_profile = DriverProfile(0, 1)
+        new_profile.expected_drivers_per_min = self.expected_drivers_per_min + other.expected_drivers_per_min
+        new_profile.mins_between_drivers = 1 / new_profile.expected_drivers_per_min
+        
+        self_weight = self.expected_drivers_per_min / new_profile.expected_drivers_per_min
+        other_weight = other.expected_drivers_per_min / new_profile.expected_drivers_per_min
+        new_profile.dollars_fined = self_weight * self.dollars_fined + other_weight * other.dollars_fined
+        new_profile.mph_over_limit = self_weight * self.mph_over_limit + other_weight * other.mph_over_limit
+        
+        return new_profile
+
+
+class TrafficPattern:
+    """a collection of DriverProfile's representing an overall traffic pattern"""
     
-    # O(n^2) time where n is len(self.speeder_types)
-    def get_max_ticket_revenue_per_hour(self, booking_time_mins=15):
-        """returns the [max_ticket_revenue, max_speeder_type_count] when stopping a variable number or speeder types"""
-        self.speeder_types.sort(key=lambda x: x.mph_over_limit)
-        speederGroup = deepcopy(self)
-        max_ticket_revunue, max_speeder_type_count = 0, len(self.speeder_types)
-        for i in range(len(self.speeder_types)):
-            speederGroup.speeder_types = self.speeder_types[i:]
-            ticket_revenue = speederGroup.get_ticket_revenue_per_hour(booking_time_mins)
-            if ticket_revenue > max_ticket_revunue:
-                max_ticket_revunue = ticket_revenue
-                max_speeder_type_count = len(self.speeder_types) - i
-        return [max_ticket_revunue, max_speeder_type_count]
+    # O(n) time where n is len(driver_profiles)
+    def __init__(self, driver_profiles):
+        if len(driver_profiles) == 0:
+            raise ValueError('no driver profiles provided')
+        self.driver_profiles = [DriverProfile(*args) for args in driver_profiles]
+        self.total_profile = self.get_total_profile()
+        total_drivers_per_min = sum([d.expected_drivers_per_min for d in self.driver_profiles])
+        self.ticket_weights = {d.mph_over_limit:d.expected_drivers_per_min/total_drivers_per_min for d in self.driver_profiles}
+    
+    # O(n) time where n is len(driver_profiles)
+    def get_total_profile(self):
+        """returns a single driver profile representing the collective driver profiles"""
+        total_profile = self.driver_profiles[0]
+        for i in range(1, len(self.driver_profiles)):
+            total_profile += self.driver_profiles[i]
+        return total_profile
+    
+    # O(n) time where n is len(self.driver_profiles)
+    def get_max_revenue_per_hour(self, booking_time_mins=15):
+        """returns the [max_revenue, max_driver_profies] when booking optimal driver profiles"""
+        self.driver_profiles.sort(key=lambda x: x.mph_over_limit,reverse=True)
+        cur_profile = self.driver_profiles[0]
+        max_revunue = cur_profile.get_expected_revenue_per_hour(booking_time_mins)
+        max_driver_profiles = 1
+        for i in range(1, len(self.driver_profiles)):
+            cur_profile += self.driver_profiles[i]
+            cur_revunue = cur_profile.get_expected_revenue_per_hour(booking_time_mins)
+            if cur_revunue > max_revunue:
+                max_revunue = cur_revunue
+                max_driver_profiles = i + 1 
+        return [max_revunue, max_driver_profiles]
+    
+    def simulate_traffic(self, realtime_scale=30, n_mins=60, speed_tolerance=5, booking_time_mins=15):
+        """prints out a simlation of speeders and tickets"""
+        mins_elapsed, cop_mins_left_boking = 0, 0
+        while mins_elapsed < n_mins:
+            random_mins = self.total_profile.get_random_mins()
+            random_profile = DriverProfile.get_random_profile(self.ticket_weights)
+            mins_elapsed += random_mins
+            time.sleep(random_mins * 1/realtime_scale * 60)
+            if random_profile.mph_over_limit <= speed_tolerance or cop_mins_left_boking > 0:
+                cop_mins_left_boking = max([0, cop_mins_left_boking-random_mins])
+                print(random_profile.mph_over_limit)
+                continue
+            cop_mins_left_boking = booking_time_mins
+            print(f"{random_profile.mph_over_limit} (ticketed ${random_profile.dollars_fined})")
 
 if __name__ == "__main__":
     booking_time_mins = 15
-    speederGroup = SpeederGroup()
-    speederGroup.add_speeder_types([ # mph_over_limit | mins_between_speeders
+    trafficPattern = TrafficPattern([ # mph_over_limit | mins_between_drivers
         [5, 5],
         [10, 10],
         [15, 20],
         [20, 40]
     ])
-    opportunity = speederGroup.get_total_speeders_per_hour() * speederGroup.get_expected_ticket_value()
-    print(f"expected total hourly revenue opportunity is ${opportunity}")
-    revenue = speederGroup.get_ticket_revenue_per_hour(booking_time_mins)
-    print(f"expected hourly revenue when booking all speed groups is ${revenue}")
-    max_revenue = speederGroup.get_max_ticket_revenue_per_hour(booking_time_mins)
-    print(f"the max expected hourly revenue of ${max_revenue[0]} occurs when booking the top {max_revenue[1]} speed group(s)") 
+    max_revenue = trafficPattern.get_max_revenue_per_hour(booking_time_mins)
+    print(f"the max expected hourly revenue of ${max_revenue[0]} occurs when booking the top {max_revenue[1]} speed group(s)")
+    trafficPattern.simulate_traffic()
