@@ -21,6 +21,7 @@ CLASSES:
     
 TODO:
     - optimize n_samples for performance when calculating p_driver_ticketed
+    - fit officer ticketing time to a distrubtion and randomize
 """
 
 from scipy.stats import expon
