@@ -117,14 +117,14 @@ class Cops():
     def __str__(self):
         return f"{self.cops_queue}"
     
-    def __iadd__(self, other):
-        self.queue.append(Cop())
+    def __iadd__(self, other: int):
+        self.queue += [Cop() for _ in range(other)]
         return self
     
-    def __isub__(self, other):
-        if len(self.queue) <= 1:
+    def __isub__(self, other: int):
+        if len(self.queue) - other < 1:
             raise ValueError('must have at least one cop')
-        del self.queue[0]
+        del self.queue[-other:]
         return self
 
     def is_available(self):
@@ -168,7 +168,7 @@ class Cops():
                 n_drivers_ticketed += 1
             n_drivers += 1
         
-        self.elapse_mins(Cop.ticketing_time_mins)
+        self.elapse_mins(INF)
         p_driver_ticketed = n_drivers_ticketed / n_drivers
         Cops.p_driver_ticketed_cache[cache_key] = p_driver_ticketed
         
