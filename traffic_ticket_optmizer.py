@@ -15,7 +15,7 @@ caught with the cost of adding another officer.
 Run the file for a simulation of traffic under the optimal police ticketing policy!
 
 CLASSES:
-    DriverProfile: a profile representing all drivers who driver a certain mph over the speed limit
+    DriverProfile: a profile representing all drivers who drive a certain mph over the speed limit
     Driver: represents an individual driver
     Cop: represents a cop
     Cops: represents a collection of cops
@@ -37,7 +37,7 @@ import time
 INF = 999_999_999
 
 class DriverProfile:
-    """a profile representing all drivers who driver a certain mph over the speed limit"""
+    """a profile representing all drivers who drive a certain mph over the speed limit"""
     def __init__(self, mph_over_limit=0, mins_between_drivers=INF):
         self.mph_over_limit = mph_over_limit
         self.mins_between_drivers = mins_between_drivers
