@@ -33,6 +33,7 @@ from scipy.stats import expon
 from random import random, choices
 from functools import reduce
 import time
+from copy import deepcopy
 
 INF = 999_999_999
 
@@ -147,7 +148,7 @@ class Cops():
         self.queue.append(self.queue.pop(0))  
         if driver is not None:
             driver.got_ticket = True
-            driver.ticketing_cop = ticketing_cop.id
+            driver.ticketing_cop = deepcopy(ticketing_cop)
 
     def p_driver_ticketed(self, mins_between_drivers, n_samples=10_000):
         """returns the probability a driver is ticketed"""
@@ -216,9 +217,12 @@ class TrafficPattern:
         max_revenue = -INF
         while self.get_revenue_per_hour() >= max_revenue:
             max_revenue = self.get_revenue_per_hour()
+            prev_target_profiles = self.target_profiles
             self.cops += 1
             self.optimize_on_target_profiles()
         self.cops -= 1
+        self.target_profiles = prev_target_profiles
+        self.target_profile = reduce(lambda x, y: x + y, self.target_profiles)
     
     # O(n*log(m)+n*k) time where n is len(schedule), m is len(driver_profiles) and k is n_cops
     def get_traffic_simulation(self, duration_mins):
@@ -236,6 +240,7 @@ class TrafficPattern:
             if driver.profile in self.target_profiles and cops.is_available():
                 cops.issue_ticket(driver)
         
+        cops.elapse_mins(INF)
         return drivers
     
     # O((n*log(m)) time n is len(schedule), and m is len(driver_profiles)
@@ -248,13 +253,13 @@ class TrafficPattern:
             time.sleep(iter_secs)
             
             while driver.scheduled_min < duration_min:
+                minute = int(driver.scheduled_min)
                 if driver.got_ticket:
                     ticket = driver.profile.dollars_ticketed
-                    minute = int(driver.scheduled_min)
-                    print(f"{driver.profile} (ticketed ${ticket} at minute {minute}) by {driver.ticketing_cop}")
+                    print(f"{minute}min: {driver.profile} - ticketed ${ticket} by {driver.ticketing_cop}")
                     time.sleep(iter_secs*5)
                 else:
-                    print(driver.profile)
+                    print(f"{minute}min: {driver.profile}")
                 driver = drivers.pop(0)
 
 if __name__ == "__main__":    
